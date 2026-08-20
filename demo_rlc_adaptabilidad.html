@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sistema RLC — Estados y Adaptabilidad</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0e1a;
+    --bg-grid: rgba(255,255,255,0.035);
+    --panel:#121a2e;
+    --panel-2:#0e1526;
+    --border:#243252;
+    --text:#e7ecf7;
+    --muted:#8291b3;
+    --muted-dim:#5b6784;
+    --grav:#6ee7a0;
+    --neuro:#ffb454;
+    --sky:#7dc9ff;
+    --err:#ff6b81;
+    --radius:10px;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --sans: 'IBM Plex Sans', system-ui, sans-serif;
+    --disp: 'Space Grotesk', system-ui, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(110,231,160,0.06), transparent 60%),
+      var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    min-height:100vh;
+    padding-bottom:44px;
+  }
+
+  header.top{
+    padding:34px 24px 18px 24px;
+    max-width:1180px;
+    margin:0 auto;
+    border-bottom:1px solid var(--border);
+  }
+  .eyebrow{
+    font-family:var(--mono);
+    font-size:0.72rem;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--muted);
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:10px;
+  }
+  .eyebrow::before{
+    content:"";
+    width:7px;height:7px;border-radius:50%;
+    background:var(--grav);
+    box-shadow:0 0 8px var(--grav);
+    animation:blink 2.4s ease-in-out infinite;
+  }
+  @keyframes blink{0%,100%{opacity:1;}50%{opacity:0.35;}}
+  h1{
+    font-family:var(--disp);
+    font-weight:600;
+    font-size:clamp(1.5rem, 3vw, 2.1rem);
+    margin:0 0 10px 0;
+    letter-spacing:-0.01em;
+  }
+  header.top p{
+    color:var(--muted);
+    max-width:680px;
+    line-height:1.55;
+    margin:0;
+    font-size:0.94rem;
+  }
+
+  main{
+    max-width:1180px;
+    margin:22px auto 0 auto;
+    padding:0 24px;
+    display:grid;
+    grid-template-columns: 1fr 320px;
+    gap:18px;
+  }
+  @media (max-width:900px){ main{ grid-template-columns:1fr; } }
+
+  .stage{
+    background:
+      linear-gradient(var(--bg-grid) 1px, transparent 1px) 0 0/28px 28px,
+      linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px) 0 0/28px 28px,
+      var(--panel-2);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:16px;
+  }
+  .stage-title{
+    font-family:var(--mono);
+    font-size:0.7rem;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    color:var(--muted-dim);
+    margin:0 0 10px 0;
+  }
+  canvas.scope{
+    width:100%;
+    height:auto;
+    display:block;
+    border-radius:6px;
+    background:#080b14;
+    border:1px solid var(--border);
+  }
+  .scope-legend{
+    display:flex;
+    gap:16px;
+    font-family:var(--mono);
+    font-size:0.72rem;
+    color:var(--muted);
+    margin:8px 0 16px 0;
+  }
+  .scope-legend span{ display:flex; align-items:center; gap:6px; }
+  .swatch{ width:10px;height:10px;border-radius:2px; }
+
+  .rail{ display:flex; flex-direction:column; gap:14px; }
+  .card{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:16px;
+  }
+  .card h3{
+    margin:0 0 12px 0;
+    font-family:var(--mono);
+    font-size:0.72rem;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    color:var(--muted);
+  }
+  .field{ margin-bottom:14px; }
+  .field:last-child{ margin-bottom:0; }
+  .field label{
+    display:flex; justify-content:space-between;
+    font-size:0.82rem; margin-bottom:8px;
+  }
+  .field label .val{
+    font-family:var(--mono);
+    color:var(--sky);
+    font-variant-numeric: tabular-nums;
+  }
+  input[type=range]{
+    -webkit-appearance:none;
+    width:100%;
+    height:4px;
+    border-radius:2px;
+    background:#233152;
+    outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;
+    width:15px;height:15px;
+    border-radius:50%;
+    background:var(--sky);
+    cursor:pointer;
+    border:2px solid #0a0e1a;
+    box-shadow:0 0 0 1px var(--sky);
+  }
+  input[type=range]:focus-visible{ outline:2px solid var(--text); outline-offset:3px; }
+
+  .toggle-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    font-size:0.85rem;
+  }
+  .switch{
+    position:relative;
+    width:42px; height:24px;
+    flex-shrink:0;
+  }
+  .switch input{ opacity:0; width:0; height:0; }
+  .slider-toggle{
+    position:absolute; cursor:pointer;
+    top:0;left:0;right:0;bottom:0;
+    background:#233152;
+    border-radius:999px;
+    transition:.2s;
+  }
+  .slider-toggle::before{
+    content:"";
+    position:absolute;
+    width:18px;height:18px;
+    left:3px;top:3px;
+    background:var(--text);
+    border-radius:50%;
+    transition:.2s;
+  }
+  .switch input:checked + .slider-toggle{ background:var(--grav); }
+  .switch input:checked + .slider-toggle::before{ transform:translateX(18px); background:#08130c; }
+  .switch input:focus-visible + .slider-toggle{ outline:2px solid var(--text); outline-offset:2px; }
+
+  .btn-row{ display:flex; gap:8px; margin-top:12px; }
+  button.action{
+    flex:1;
+    padding:10px 0;
+    border-radius:7px;
+    border:1px solid var(--border);
+    background:transparent;
+    color:var(--text);
+    font-family:var(--mono);
+    font-size:0.78rem;
+    cursor:pointer;
+  }
+  button.action:hover{ border-color:var(--sky); color:var(--sky); }
+  button.action:focus-visible{ outline:2px solid var(--text); outline-offset:2px; }
+  button.action.primary{
+    background:var(--grav);
+    color:#08130c;
+    border-color:var(--grav);
+    font-weight:600;
+  }
+  button.action.primary:hover{ filter:brightness(1.08); }
+
+  .readout{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap:10px;
+  }
+  .readout .stat{
+    background:var(--panel-2);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:10px 12px;
+  }
+  .readout .stat.wide{ grid-column: 1 / -1; }
+  .readout .stat .k{
+    font-family:var(--mono);
+    font-size:0.63rem;
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    color:var(--muted-dim);
+    margin-bottom:5px;
+  }
+  .readout .stat .v{
+    font-family:var(--mono);
+    font-size:1.05rem;
+    font-variant-numeric: tabular-nums;
+    color:var(--sky);
+  }
+  .readout .stat .v.regime-nodamp{ color:var(--sky); }
+  .readout .stat .v.regime-under{ color:var(--grav); }
+  .readout .stat .v.regime-crit{ color:var(--neuro); }
+  .readout .stat .v.regime-over{ color:var(--err); }
+
+  .blurb{
+    font-size:0.83rem;
+    line-height:1.6;
+    color:var(--muted);
+  }
+  .blurb b{ color:var(--text); font-weight:600; }
+
+  footer.credits{
+    max-width:1180px;
+    margin:30px auto 0 auto;
+    padding:0 24px;
+    color:var(--muted-dim);
+    font-family:var(--mono);
+    font-size:0.72rem;
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="eyebrow">Sistemas Complejos · SC_G01_2026_02 · en vivo en tu navegador</div>
+  <h1>Sistema RLC: estados y adaptabilidad</h1>
+  <p>Mueve la resistencia R y observa cómo cambia el <b>estado</b> del sistema (carga, corriente)
+  entre los cuatro regímenes de amortiguamiento. Activa "R adaptativa" para ver un sistema que
+  ajusta su propio amortiguamiento según qué tan fuerte esté oscilando — el mismo mecanismo que
+  explica la adaptabilidad en sistemas complejos reales.</p>
+</header>
+
+<main>
+  <div>
+    <div class="stage">
+      <p class="stage-title">v_C(t) e i(t) — señales en el tiempo</p>
+      <canvas class="scope" id="scope-time" width="760" height="220"></canvas>
+      <div class="scope-legend">
+        <span><span class="swatch" style="background:#6ee7a0;"></span> v_C(t) — voltaje capacitor</span>
+        <span><span class="swatch" style="background:#ffb454;"></span> i(t) — corriente</span>
+      </div>
+
+      <p class="stage-title">Retrato de fase — espacio de estados (q, i)</p>
+      <canvas class="scope" id="scope-phase" width="760" height="300"></canvas>
+    </div>
+  </div>
+
+  <div class="rail">
+    <div class="card">
+      <h3>Parámetros</h3>
+      <div class="field">
+        <label>Resistencia R <span class="val" id="r-val">1.0 Ω</span></label>
+        <input type="range" id="r-slider" min="0" max="12" step="0.1" value="1">
+      </div>
+      <div class="toggle-row">
+        <span>R adaptativa</span>
+        <label class="switch">
+          <input type="checkbox" id="adaptive-toggle">
+          <span class="slider-toggle"></span>
+        </label>
+      </div>
+      <div class="btn-row">
+        <button class="action primary" id="btn-perturb">Perturbar</button>
+        <button class="action" id="btn-reset">Reiniciar</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Lectura en vivo</h3>
+      <div class="readout">
+        <div class="stat">
+          <div class="k">ζ (amortig.)</div>
+          <div class="v" id="zeta-val">0.00</div>
+        </div>
+        <div class="stat">
+          <div class="k">ω0</div>
+          <div class="v" id="omega-val">2.00</div>
+        </div>
+        <div class="stat wide">
+          <div class="k">Régimen</div>
+          <div class="v" id="regime-val">—</div>
+        </div>
+        <div class="stat wide">
+          <div class="k">Eigenvalores λ</div>
+          <div class="v" id="eigen-val" style="font-size:0.85rem;">—</div>
+        </div>
+        <div class="stat">
+          <div class="k">R efectiva</div>
+          <div class="v" id="reff-val">1.00</div>
+        </div>
+        <div class="stat">
+          <div class="k">Envolvente |i|</div>
+          <div class="v" id="env-val">0.00</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="blurb">L = 1 H y C = 0.25 F fijos (ω0 = 2 rad/s, R crítico = 4 Ω), igual que en
+      el informe. Con <b>R adaptativa</b> apagada, R es exactamente el valor del slider — un
+      sistema rígido. Con <b>R adaptativa</b> encendida, el sistema sube su propia R cuando la
+      oscilación crece (como un regulador biológico) y la relaja cuando ya no la necesita: prueba
+      poner el slider en R≈0, dale "Perturbar", y compara ambos modos.</p>
+    </div>
+  </div>
+</main>
+
+<footer class="credits">Sistemas Complejos — SC_G01_2026_02 — Universidad Sergio Arboleda · integración RK4 del sistema RLC ejecutándose en vivo en el navegador.</footer>
+
+<script>
+const L = 1.0;
+const C = 0.25;
+const OMEGA0 = Math.sqrt(1/(L*C));
+
+let q = 1.0, i = 0.0;
+let envelope = 0.0;
+let history = []; // {t, vC, i}
+let phaseTrail = []; // {q, i}
+let simTime = 0;
+let running = true;
+
+const rSlider = document.getElementById('r-slider');
+const rVal = document.getElementById('r-val');
+const adaptiveToggle = document.getElementById('adaptive-toggle');
+
+function baseR(){ return parseFloat(rSlider.value); }
+
+function effectiveR(){
+  if(adaptiveToggle.checked){
+    const gain = 3.2;
+    const r = baseR() + gain*envelope;
+    return Math.min(15, r);
+  }
+  return baseR();
+}
+
+function derivatives(state, R){
+  const [qs, is] = state;
+  const dq = is;
+  const di = (-qs/C - R*is)/L;
+  return [dq, di];
+}
+
+function rk4Step(dt, R){
+  const state = [q, i];
+  const k1 = derivatives(state, R);
+  const s2 = [state[0]+k1[0]*dt/2, state[1]+k1[1]*dt/2];
+  const k2 = derivatives(s2, R);
+  const s3 = [state[0]+k2[0]*dt/2, state[1]+k2[1]*dt/2];
+  const k3 = derivatives(s3, R);
+  const s4 = [state[0]+k3[0]*dt, state[1]+k3[1]*dt];
+  const k4 = derivatives(s4, R);
+  q += (k1[0]+2*k2[0]+2*k3[0]+k4[0])*dt/6;
+  i += (k1[1]+2*k2[1]+2*k3[1]+k4[1])*dt/6;
+}
+
+function stepPhysics(dt){
+  const decay = Math.exp(-dt/0.6);
+  envelope = Math.max(envelope*decay, Math.abs(i));
+
+  const R = effectiveR();
+  rk4Step(dt, R);
+  simTime += dt;
+
+  const vC = q/C;
+  history.push({t: simTime, vC, i});
+  if(history.length > 900) history.shift();
+
+  phaseTrail.push({q, i});
+  if(phaseTrail.length > 900) phaseTrail.shift();
+}
+
+function computeStats(){
+  const R = effectiveR();
+  const zeta = (R/2)*Math.sqrt(C/L);
+  const disc = (R/L)*(R/L) - 4/(L*C);
+  let eigStr, regime, regimeClass;
+  const a = -R/(2*L);
+  if(disc < -1e-9){
+    const wd = Math.sqrt(-disc)/2;
+    eigStr = a.toFixed(2) + ' ± ' + wd.toFixed(2) + 'j';
+    regime = (R < 1e-6) ? 'No amortiguado' : 'Subamortiguado';
+    regimeClass = (R < 1e-6) ? 'regime-nodamp' : 'regime-under';
+  } else if(Math.abs(disc) <= 1e-9){
+    eigStr = a.toFixed(2) + ' (doble)';
+    regime = 'Críticamente amortiguado';
+    regimeClass = 'regime-crit';
+  } else {
+    const sq = Math.sqrt(disc)/2;
+    eigStr = (a+sq).toFixed(2) + ', ' + (a-sq).toFixed(2);
+    regime = 'Sobreamortiguado';
+    regimeClass = 'regime-over';
+  }
+  return {R, zeta, eigStr, regime, regimeClass};
+}
+
+function updateReadout(){
+  const s = computeStats();
+  document.getElementById('zeta-val').textContent = s.zeta.toFixed(2);
+  document.getElementById('omega-val').textContent = OMEGA0.toFixed(2);
+  const regimeEl = document.getElementById('regime-val');
+  regimeEl.textContent = s.regime;
+  regimeEl.className = 'v ' + s.regimeClass;
+  document.getElementById('eigen-val').textContent = s.eigStr;
+  document.getElementById('reff-val').textContent = s.R.toFixed(2) + ' Ω';
+  document.getElementById('env-val').textContent = envelope.toFixed(2);
+}
+
+const scopeTime = document.getElementById('scope-time');
+const ctxTime = scopeTime.getContext('2d');
+const scopePhase = document.getElementById('scope-phase');
+const ctxPhase = scopePhase.getContext('2d');
+
+function drawTimeScope(){
+  const W = scopeTime.width, H = scopeTime.height;
+  ctxTime.clearRect(0,0,W,H);
+  ctxTime.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctxTime.lineWidth = 1;
+  ctxTime.beginPath();
+  ctxTime.moveTo(0,H/2); ctxTime.lineTo(W,H/2);
+  ctxTime.stroke();
+
+  if(history.length < 2) return;
+  const tMax = history[history.length-1].t;
+  const windowSec = 12;
+  const tMin = Math.max(0, tMax - windowSec);
+
+  function drawTrace(key, color){
+    ctxTime.beginPath();
+    let started = false;
+    for(const p of history){
+      if(p.t < tMin) continue;
+      const px = ((p.t - tMin)/windowSec)*W;
+      const py = H/2 - p[key]*(H*0.18);
+      if(!started){ ctxTime.moveTo(px,py); started=true; }
+      else ctxTime.lineTo(px,py);
+    }
+    ctxTime.strokeStyle = color;
+    ctxTime.lineWidth = 1.6;
+    ctxTime.stroke();
+  }
+  drawTrace('vC', '#6ee7a0');
+  drawTrace('i', '#ffb454');
+}
+
+function drawPhaseScope(){
+  const W = scopePhase.width, H = scopePhase.height;
+  ctxPhase.clearRect(0,0,W,H);
+  const cx = W/2, cy = H/2;
+  const scale = 55;
+
+  ctxPhase.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctxPhase.lineWidth = 1;
+  ctxPhase.beginPath(); ctxPhase.moveTo(0,cy); ctxPhase.lineTo(W,cy); ctxPhase.stroke();
+  ctxPhase.beginPath(); ctxPhase.moveTo(cx,0); ctxPhase.lineTo(cx,H); ctxPhase.stroke();
+
+  if(phaseTrail.length > 1){
+    ctxPhase.beginPath();
+    for(let k=0;k<phaseTrail.length;k++){
+      const p = phaseTrail[k];
+      const px = cx + p.q*scale;
+      const py = cy - p.i*scale;
+      if(k===0) ctxPhase.moveTo(px,py); else ctxPhase.lineTo(px,py);
+    }
+    ctxPhase.strokeStyle = '#7dc9ff';
+    ctxPhase.lineWidth = 1.4;
+    ctxPhase.globalAlpha = 0.85;
+    ctxPhase.stroke();
+    ctxPhase.globalAlpha = 1;
+  }
+
+  // equilibrio
+  ctxPhase.beginPath();
+  ctxPhase.arc(cx, cy, 4, 0, Math.PI*2);
+  ctxPhase.strokeStyle = '#ffffff';
+  ctxPhase.lineWidth = 1.4;
+  ctxPhase.stroke();
+
+  // punto actual
+  const px = cx + q*scale, py = cy - i*scale;
+  ctxPhase.beginPath();
+  ctxPhase.arc(px, py, 4.5, 0, Math.PI*2);
+  ctxPhase.fillStyle = '#ffb454';
+  ctxPhase.shadowColor = '#ffb454';
+  ctxPhase.shadowBlur = 10;
+  ctxPhase.fill();
+  ctxPhase.shadowBlur = 0;
+}
+
+function reset(){
+  q = 1.0; i = 0.0;
+  envelope = 0.0;
+  simTime = 0;
+  history = [];
+  phaseTrail = [];
+}
+
+function perturb(){
+  i += 3.0;
+}
+
+rSlider.addEventListener('input', ()=>{
+  rVal.textContent = parseFloat(rSlider.value).toFixed(1) + ' Ω';
+});
+document.getElementById('btn-reset').addEventListener('click', reset);
+document.getElementById('btn-perturb').addEventListener('click', perturb);
+
+const DT = 1/240;
+const SUBSTEPS_PER_FRAME = 4;
+
+function loop(){
+  for(let s=0; s<SUBSTEPS_PER_FRAME; s++){
+    stepPhysics(DT);
+  }
+  drawTimeScope();
+  drawPhaseScope();
+  updateReadout();
+  requestAnimationFrame(loop);
+}
+
+reset();
+loop();
+</script>
+
+</body>
+</html>
