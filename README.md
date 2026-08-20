@@ -1,4 +1,5 @@
- ¿Qué se entiende por adaptabilidad de un sistema?
+##¿Qué se entiende por adaptabilidad de un sistema?
+ 
 La adaptabilidad de un sistema es su capacidad de ajustar su comportamiento interno — sin cambiar su
 estructura fundamental ni su objetivo — para mantener la estabilidad o alcanzar un nuevo equilibrio frente a
 perturbaciones o cambios en su entorno. No es lo mismo que simplemente "ser estable": un sistema puede
